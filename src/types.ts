@@ -50,3 +50,17 @@ export interface LineResult {
   event?: TraceEvent;
   issue?: ParseIssue;
 }
+
+export interface ToolSpan {
+  id?: string;
+  name?: string;
+  call: ToolCallEvent;
+  result?: ToolResultEvent;
+  ok?: boolean;
+  durationMs?: number;
+}
+
+export interface PairResult {
+  spans: ToolSpan[];
+  orphans: ToolResultEvent[];
+}
