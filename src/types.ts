@@ -81,6 +81,15 @@ export interface ToolStats {
   timeShare: number;
 }
 
+export interface TimelineOptions {
+  /** Only include this tool's calls (and drop user/assistant text). */
+  tool?: string;
+  /** Truncate JSON-stringified tool_call args to this many characters. Default 80. */
+  maxArgLength?: number;
+  /** Omit user and assistant messages from the output. */
+  hideText?: boolean;
+}
+
 export interface TraceStats {
   totalEvents: number;
   eventCounts: { user: number; assistant: number; tool_call: number; tool_result: number };

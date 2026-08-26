@@ -4,6 +4,7 @@ export type {
   PairResult,
   ParseIssue,
   ParseResult,
+  TimelineOptions,
   TokenTotals,
   ToolCallEvent,
   ToolResultEvent,
@@ -17,3 +18,4 @@ export type {
 export { parseTrace, parseTraceLine, parseTraceStrict } from './parse.ts';
 export { pairToolEvents } from './pair.ts';
 export { computeStats } from './stats.ts';
+export { renderStats, renderTimeline } from './render.ts';
