@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { computeStats, parseTrace, parseTraceStrict, renderStats, renderTimeline } from './index.ts';
 import type { TraceEvent } from './types.ts';
 
 // Kept in sync with package.json by hand -- there is no build step that reads
 // package.json at runtime here (no resolveJsonModule, no bundler).
-const VERSION = '0.1.0';
+export const VERSION = '0.1.0';
 
-const USAGE = `agent-trace <command> <file> [options]
+export const USAGE = `agent-trace <command> <file> [options]
 
 Commands:
   stats   totals, per-tool timing, token usage
@@ -25,12 +26,22 @@ Options:
 Pass - as <file> to read the trace from stdin.
 `;
 
-function fail(message: string): never {
-  process.stderr.write(`agent-trace: ${message}\n`);
-  process.exit(2);
+// Thrown for bad usage instead of exiting directly, so parseArgs and runCli
+// stay plain functions that tests can call without spawning a process.
+export class CliError extends Error {
+  constructor(
+    message: string,
+    readonly exitCode = 2,
+  ) {
+    super(message);
+  }
 }
 
-interface ParsedArgs {
+function fail(message: string): never {
+  throw new CliError(message);
+}
+
+export interface ParsedArgs {
   command: 'stats' | 'show';
   file: string;
   json: boolean;
@@ -40,7 +51,7 @@ interface ParsedArgs {
   hideText: boolean;
 }
 
-function parseArgs(argv: string[]): ParsedArgs | 'help' | 'version' {
+export function parseArgs(argv: string[]): ParsedArgs | 'help' | 'version' {
   if (argv.includes('-h') || argv.includes('--help')) return 'help';
   if (argv.includes('--version')) return 'version';
 
@@ -95,53 +106,72 @@ function readInput(file: string): string {
   return readFileSync(file === '-' ? 0 : file, 'utf8');
 }
 
-function main(): void {
-  const parsed = parseArgs(process.argv.slice(2));
-  if (parsed === 'help') {
-    process.stdout.write(USAGE);
-    return;
-  }
-  if (parsed === 'version') {
-    process.stdout.write(`${VERSION}\n`);
-    return;
-  }
+export interface RunResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
 
-  const { command, file, json, tool, maxArgLength, strict, hideText } = parsed;
+// Pure aside from the injected reader, so tests exercise the whole command
+// pipeline (arg parsing, parse issues, stats/show rendering) without files,
+// stdin or process.exit.
+export function runCli(argv: string[], readTrace: (file: string) => string): RunResult {
+  let stdout = '';
+  let stderr = '';
 
-  let text: string;
   try {
-    text = readInput(file);
-  } catch (err) {
-    fail(`cannot read ${file === '-' ? 'stdin' : file}: ${(err as Error).message}`);
-  }
+    const parsed = parseArgs(argv);
+    if (parsed === 'help') return { stdout: USAGE, stderr: '', exitCode: 0 };
+    if (parsed === 'version') return { stdout: `${VERSION}\n`, stderr: '', exitCode: 0 };
 
-  let events: TraceEvent[];
-  if (strict) {
+    const { command, file, json, tool, maxArgLength, strict, hideText } = parsed;
+
+    let text: string;
     try {
-      events = parseTraceStrict(text);
+      text = readTrace(file);
     } catch (err) {
-      process.stderr.write(`agent-trace: ${(err as Error).message}\n`);
-      process.exit(1);
+      throw new CliError(`cannot read ${file === '-' ? 'stdin' : file}: ${(err as Error).message}`);
     }
-  } else {
-    const result = parseTrace(text);
-    events = result.events;
-    for (const issue of result.issues) {
-      process.stderr.write(`agent-trace: line ${issue.line}: ${issue.message}\n`);
+
+    let events: TraceEvent[];
+    if (strict) {
+      events = parseTraceStrict(text);
+    } else {
+      const result = parseTrace(text);
+      events = result.events;
+      for (const issue of result.issues) {
+        stderr += `agent-trace: line ${issue.line}: ${issue.message}\n`;
+      }
     }
-  }
 
-  if (events.length === 0) {
-    process.stderr.write('agent-trace: nothing usable in trace\n');
-    process.exit(1);
-  }
+    if (events.length === 0) {
+      return { stdout, stderr: `${stderr}agent-trace: nothing usable in trace\n`, exitCode: 1 };
+    }
 
-  if (command === 'stats') {
-    const stats = computeStats(events);
-    process.stdout.write(json ? `${JSON.stringify(stats, null, 2)}\n` : `${renderStats(stats)}\n`);
-  } else {
-    process.stdout.write(`${renderTimeline(events, { tool, maxArgLength, hideText })}\n`);
+    if (command === 'stats') {
+      const stats = computeStats(events);
+      stdout += json ? `${JSON.stringify(stats, null, 2)}\n` : `${renderStats(stats)}\n`;
+    } else {
+      stdout += `${renderTimeline(events, { tool, maxArgLength, hideText })}\n`;
+    }
+
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err) {
+    if (err instanceof CliError) {
+      return { stdout, stderr: `agent-trace: ${err.message}\n`, exitCode: err.exitCode };
+    }
+    // parseTraceStrict throws a plain Error naming the first bad line.
+    return { stdout, stderr: `agent-trace: ${(err as Error).message}\n`, exitCode: 1 };
   }
 }
 
-main();
+function main(): void {
+  const result = runCli(process.argv.slice(2), readInput);
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.exitCode !== 0) process.exit(result.exitCode);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
