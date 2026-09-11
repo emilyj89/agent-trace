@@ -123,6 +123,8 @@ they are equally happy with events you built yourself.
 
 ```bash
 npm test
+npm run test:watch     # rerun on file change
+npm run test:coverage  # node's built-in coverage report
 ```
 
 ## License

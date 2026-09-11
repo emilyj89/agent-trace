@@ -10,7 +10,9 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "build": "tsc",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test test/*.test.ts",
+    "test:watch": "node --test --watch test/*.test.ts",
+    "test:coverage": "node --test --experimental-test-coverage test/*.test.ts"
   },
   "keywords": ["agent", "trace", "jsonl", "observability", "llm", "cli"],
   "devDependencies": {
